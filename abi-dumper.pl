@@ -14,7 +14,7 @@
 # REQUIREMENTS
 # ============
 #  Perl 5 (5.8 or newer)
-#  Elfutils (eu-readelf)
+#  GNU Binutils readelf
 #  Vtable-Dumper (1.1 or newer)
 #  Binutils (objdump)
 #  Universal Ctags
@@ -55,8 +55,8 @@ my $VTABLE_DUMPER = "vtable-dumper";
 my $VTABLE_DUMPER_VERSION = "1.0";
 
 my $LOCALE = "LANG=C.UTF-8";
-my $EU_READELF = "eu-readelf";
-my $EU_READELF_L = $LOCALE." ".$EU_READELF;
+my $READELF = "readelf";
+my $READELF_L = $LOCALE." ".$READELF;
 my $OBJDUMP = "objdump";
 my $CTAGS = "ctags";
 my $GPP = "g++";
@@ -141,7 +141,11 @@ GetOptions("h|help!" => \$Help,
 # internal options
   "addr2name!" => \$AddrToName,
 # obsolete
-  "reimplement-std!" => \$ReimplementStd
+  "reimplement-std!" => \$ReimplementStd,
+#get dependencies from the command line
+  "objdump=s" => \$OBJDUMP,
+  "gpp=s" => \$GPP,
+  "readelf=s" => \$READELF
 ) or ERR_MESSAGE();
 
 sub ERR_MESSAGE()
@@ -274,6 +278,15 @@ GENERAL OPTIONS:
   
   -debug
       Enable debug messages.
+
+  -readelf
+      Path to readelf.
+
+  -gpp
+      Path to g++.
+
+  -objdump
+      Path to objdump.
 
 EXTRA OPTIONS:
   -use-tu-dump
@@ -578,7 +591,7 @@ sub readline_ELF($)
     { # other lines
         return ();
     }
-    return () if(not defined $ELF_TYPE{$Info[2]} and $Info[5] ne "UNDEF");
+    return () if(not defined $ELF_TYPE{$Info[2]} and $Info[5] ne "UND");
     return () if(not defined $ELF_BIND{$Info[3]});
     return () if(not defined $ELF_VIS{$Info[4]});
     if($Info[5] eq "ABS" and $Info[0]=~/\A0+\Z/)
@@ -600,14 +613,15 @@ sub read_Symbols($)
     my $Dynamic = ($Lib_Name=~/\.so(\.|\Z)/);
     my $Dbg = ($Lib_Name=~/\.debug\Z/);
     
-    if(not check_Cmd($EU_READELF)) {
+    if(not check_Cmd($READELF)) {
         exitStatus("Not_Found", "can't find \"eu-readelf\"");
     }
     
     my %SectionInfo;
     my %KSect;
     
-    my $Cmd = $EU_READELF_L." -S \"$Lib_Path\" 2>\"$TMP_DIR/error\"";
+    # Modified to match readelf instead of eu-readelf.
+    my $Cmd = $READELF_L." --wide -S \"$Lib_Path\" 2>\"$TMP_DIR/error\"";
     foreach (split(/\n/, `$Cmd`))
     {
         if(/\[\s*(\d+)\]\s+([\w\.]+)/)
@@ -649,7 +663,8 @@ sub read_Symbols($)
     
     if($Dynamic)
     { # dynamic library specifics
-        $Cmd = $EU_READELF_L." -d \"$Lib_Path\" 2>\"$TMP_DIR/error\"";
+        # Modified to match readelf instead of eu-readelf.
+        $Cmd = $READELF_L." --wide -d \"$Lib_Path\" 2>\"$TMP_DIR/error\"";
         foreach (split(/\n/, `$Cmd`))
         {
             if(/NEEDED.+\[([^\[\]]+)\]/)
@@ -668,7 +683,8 @@ sub read_Symbols($)
         $ExtraPath = $ExtraInfo."/elf-info";
     }
     
-    $Cmd = $EU_READELF_L." -s \"$Lib_Path\" 2>\"$TMP_DIR/error\"";
+    # Modified to match readelf instead of eu-readelf.
+    $Cmd = $READELF_L." --wide -s \"$Lib_Path\" 2>\"$TMP_DIR/error\"";
     
     if($ExtraPath)
     { # debug mode
@@ -711,8 +727,8 @@ sub read_Symbols($)
                 if(skipSymbol($Symbol)) {
                     next;
                 }
-                
-                if($Ndx eq "UNDEF")
+                # Modified to match readelf instead of eu-readelf.
+                if($Ndx eq "UND")
                 { # ignore interfaces that are imported from somewhere else
                     $Library_UndefSymbol{$TargetName}{$Symbol} = 0;
                     next;
@@ -837,8 +853,8 @@ sub read_Alt_Info($)
     my $Path = $_[0];
     my $Name = getFilename($Path);
     
-    if(not check_Cmd($EU_READELF)) {
-        exitStatus("Not_Found", "can't find \"$EU_READELF\" command");
+    if(not check_Cmd($READELF)) {
+        exitStatus("Not_Found", "can't find \"$READELF\" command");
     }
     
     printMsg("INFO", "Reading alternate debug-info");
@@ -855,11 +871,13 @@ sub read_Alt_Info($)
     
     if($ExtraPath)
     {
-        system($EU_READELF_L." -N --debug-dump=line \"$Path\" 2>\"$TMP_DIR/error\" >\"$ExtraPath\"");
+        # Modified to match readelf instead of eu-readelf.
+        system($READELF_L." --wide -N --debug-dump=line \"$Path\" 2>\"$TMP_DIR/error\" >\"$ExtraPath\"");
         open(SRC, $ExtraPath);
     }
     else {
-        open(SRC, $EU_READELF_L." -N --debug-dump=line \"$Path\" 2>\"$TMP_DIR/error\" |");
+        # Modified to match readelf instead of eu-readelf.
+        open(SRC, $READELF_L." --wide -N --debug-dump=line \"$Path\" 2>\"$TMP_DIR/error\" |");
     }
     
     my $DirTable_Def = undef;
@@ -868,8 +886,8 @@ sub read_Alt_Info($)
     while(<SRC>)
     {
         if(defined $AddDirs)
-        {
-            if(/Directory table/i)
+        {   #Modified to match readelf instead of eu-readelf.
+            if(/Directory Table/i)
             {
                 $DirTable_Def = 1;
                 next;
@@ -916,11 +934,13 @@ sub read_Alt_Info($)
     
     if($ExtraPath)
     {
-        system($EU_READELF_L." -N --debug-dump=info \"$Path\" 2>\"$TMP_DIR/error\" >\"$ExtraPath\"");
+        # Modified to match readelf instead of eu-readelf.
+        system($READELF_L." --wide -N --debug-dump=info \"$Path\" 2>\"$TMP_DIR/error\" >\"$ExtraPath\"");
         open(INFO, $ExtraPath);
     }
     else {
-        open(INFO, $EU_READELF_L." -N --debug-dump=info \"$Path\" 2>\"$TMP_DIR/error\" |");
+        # Modified to match readelf instead of eu-readelf.
+        open(INFO, $READELF_L." --wide -N --debug-dump=info \"$Path\" 2>\"$TMP_DIR/error\" |");
     }
     
     my $ID = undef;
@@ -963,8 +983,8 @@ sub read_DWARF_Info($)
     my $Dir = getDirname($Path);
     my $Name = getFilename($Path);
     
-    if(not check_Cmd($EU_READELF)) {
-        exitStatus("Not_Found", "can't find \"$EU_READELF\" command");
+    if(not check_Cmd($READELF)) {
+        exitStatus("Not_Found", "can't find \"$READELF\" command");
     }
     
     if(-s $Path > 1024*1024*100) {
@@ -977,7 +997,8 @@ sub read_DWARF_Info($)
         $AddOpt .= " -N";
     }
     
-    my $Sect = `$EU_READELF_L -S \"$Path\" 2>\"$TMP_DIR/error\"`;
+    # Modified to match readelf instead of eu-readelf.
+    my $Sect = `$READELF_L --wide -S \"$Path\" 2>\"$TMP_DIR/error\"`;
     
     if($Sect!~/\.z?debug_info/)
     { # No DWARF info
@@ -1067,11 +1088,13 @@ sub read_DWARF_Info($)
     
     if($ExtraPath)
     {
-        system($EU_READELF_L." -h \"$Path\" 2>\"$TMP_DIR/error\" >\"$ExtraPath\"");
+        # Modified to match readelf instead of eu-readelf.
+        system($READELF_L." --wide -h \"$Path\" 2>\"$TMP_DIR/error\" >\"$ExtraPath\"");
         open(HEADER, $ExtraPath);
     }
     else {
-        open(HEADER, $EU_READELF_L." -h \"$Path\" 2>\"$TMP_DIR/error\" |");
+        # Modified to match readelf instead of eu-readelf.
+        open(HEADER, $READELF_L." --wide -h \"$Path\" 2>\"$TMP_DIR/error\" |");
     }
     
     my %Header = ();
@@ -1108,7 +1131,8 @@ sub read_DWARF_Info($)
     
     if($ExtraPath)
     {
-        system($EU_READELF_L." -S \"$Path\" 2>\"$TMP_DIR/error\" >\"$ExtraPath\"");
+        # Modified to match readelf instead of eu-readelf.
+        system($READELF_L." --wide -S \"$Path\" 2>\"$TMP_DIR/error\" >\"$ExtraPath\"");
         open(HEADER, $ExtraPath);
     }
     
@@ -1121,28 +1145,30 @@ sub read_DWARF_Info($)
     
     if($ExtraPath)
     {
-        system($EU_READELF_L." $AddOpt --debug-dump=line \"$Path\" 2>\"$TMP_DIR/error\" >\"$ExtraPath\"");
+        # Modified to match readelf instead of eu-readelf.
+        system($READELF_L." --wide $AddOpt --debug-dump=line \"$Path\" 2>\"$TMP_DIR/error\" >\"$ExtraPath\"");
         open(SRC, $ExtraPath);
     }
     else {
-        open(SRC, $EU_READELF_L." $AddOpt --debug-dump=line \"$Path\" 2>\"$TMP_DIR/error\" |");
+        # Modified to match readelf instead of eu-readelf.
+        open(SRC, $READELF_L." --wide $AddOpt --debug-dump=line \"$Path\" 2>\"$TMP_DIR/error\" |");
     }
     
     my $Offset = undef;
     my $DirTable_Def = undef;
     my %DirTable = ();
-    
     while(<SRC>)
     {
         if(defined $AddDirs)
-        {
-            if(/Directory table/i)
+        {   # Modified to match readelf instead of eu-readelf.
+            if(/Directory Table/i)
             {
                 $DirTable_Def = 1;
                 %DirTable = ();
                 next;
             }
-            elsif(/File name table/i)
+           # Modified to match readelf instead of eu-readelf.
+            elsif(/File Name Table/i)
             {
                 $DirTable_Def = undef;
                 next;
@@ -1150,13 +1176,15 @@ sub read_DWARF_Info($)
             
             if(defined $DirTable_Def)
             {
-                if(/\A\s*(.+?)\Z/) {
+                # Modified to match readelf instead of eu-readelf.
+                if(/\A[0-9]+\s*(.+?)\Z/) {
                     $DirTable{keys(%DirTable)+1} = $1;
                 }
             }
         }
         
-        if(/Table at offset (\w+)/i) {
+        # Modified to match readelf instead of eu-readelf.
+        if(/Offset:\s+(\w+)/) {
             $Offset = $1;
         }
         elsif(defined $Offset
@@ -1164,7 +1192,7 @@ sub read_DWARF_Info($)
         {
             my ($Num, $Dir, $File) = ($1, $2, $3);
             chomp($File);
-            
+
             if(defined $AddDirs)
             {
                 if(my $DName = $DirTable{$Dir})
@@ -1187,16 +1215,19 @@ sub read_DWARF_Info($)
     
     if($ExtraPath)
     {
-        system($EU_READELF_L." $AddOpt --debug-dump=loc \"$Path\" 2>\"$TMP_DIR/error\" >\"$ExtraPath\"");
+        # Modified to match readelf instead of eu-readelf.
+        system($READELF_L." --wide $AddOpt --debug-dump=loc \"$Path\" 2>\"$TMP_DIR/error\" >\"$ExtraPath\"");
         open(LOC, $ExtraPath);
     }
     else {
-        open(LOC, $EU_READELF_L." $AddOpt --debug-dump=loc \"$Path\" 2>\"$TMP_DIR/error\" |");
+        # Modified to match readelf instead of eu-readelf.
+        open(LOC, $READELF_L." --wide $AddOpt --debug-dump=loc \"$Path\" 2>\"$TMP_DIR/error\" |");
     }
     
     while(<LOC>)
     {
-        if(/\A \[\s*(\w+)\].*\[\s*\w+\]\s*(.+)\Z/) {
+        # Modified to match readelf instead of eu-readelf.
+        if(/(\w+)\s+[0-9a-fA-F]+\s+[0-9a-fA-F]+\s+\(DW_OP_(\w+:?\s+-?[0-9]*)+[\(;]/) {
             $DebugLoc{$1} = $2;
         }
         elsif(/\A \[\s*(\w+)\]/) {
@@ -1220,11 +1251,13 @@ sub read_DWARF_Info($)
     }
     if($ExtraPath)
     {
-        system($EU_READELF_L." $AddOpt --debug-dump=info \"$Name\" 2>\"$TMP_DIR/error\" >\"$ExtraPath\"");
+        # Modified to match readelf instead of eu-readelf.
+        system($READELF_L." --wide $AddOpt --debug-dump=info \"$Name\" 2>\"$TMP_DIR/error\" >\"$ExtraPath\"");
         open($INFO_fh, $ExtraPath);
     }
     else {
-        open($INFO_fh, $EU_READELF_L." $AddOpt --debug-dump=info \"$Name\" 2>\"$TMP_DIR/error\" |");
+        # Modified to match readelf instead of eu-readelf.
+        open($INFO_fh, $READELF_L." --wide $AddOpt --debug-dump=info \"$Name\" 2>\"$TMP_DIR/error\" |");
     }
     chdir($ORIG_DIR);
     
@@ -1347,7 +1380,8 @@ sub read_DWARF_Dump($$)
             $Import_Num+=1;
         }
         
-        if(defined $ID and $Line=~/\A\s*(\w+)\s*(.+?)\s*\Z/)
+        # Modified to match readelf instead of eu-readelf.
+        if(defined $ID and $Line=~/\s*DW_AT_(\w+)\s*:\s+(.+?)\s*\Z/)
         {
             if(defined $Skip_Block) {
                 next;
@@ -1355,7 +1389,7 @@ sub read_DWARF_Dump($$)
             
             my $Attr = $1;
             my $Val = $2;
-            
+
             if(index($Val, "flag_present")!=-1)
             { # Fedora
                 $Val = "Yes";
@@ -1382,8 +1416,11 @@ sub read_DWARF_Dump($$)
             
             if($Kind eq "member")
             {
+                # Modified to match readelf instead of eu-readelf.
                 if($Attr eq "data_member_location")
                 {
+                    #data_meber_location value is handled later in the
+                    #attr "location" clause.
                     delete($DWARF_Info{$ID}{"Unit"});
                 }
             }
@@ -1413,6 +1450,7 @@ sub read_DWARF_Dump($$)
                 next;
             }
             
+            # Modified to match readelf instead of eu-readelf.
             if($Val=~/\A\s*\(([^()]*)\)\s*\[\s*(\w+)\]\s*\Z/)
             { # ref4, ref_udata, ref_addr, etc.
                 $Val = hex($2);
@@ -1423,41 +1461,43 @@ sub read_DWARF_Dump($$)
                     $UsedDecl{$2} = 1;
                 }
             }
+            # Modified to match readelf instead of eu-readelf.
+            # type : <0x...>, abstract_origin, specification etc
+            if($Val=~/\A<0x(\w+)>\Z/)
+            {
+                $Val = hex($1);
+            }
             elsif($Attr eq "name")
             {
-                $Val=~s/\A\([^()]*\)\s*\"(.*)\"\Z/$1/;
+                # Modified to match readelf instead of eu-readelf.
+                $Val=~s/\A\([^()]*\):\s+(.*)\Z/$1/;
+
             }
             elsif(index($Attr, "linkage_name")!=-1)
             {
-                $Val=~s/\A\([^()]*\)\s*\"(.*)\"\Z/$1/;
+                # Modified to match readelf instead of eu-readelf.
+                $Val=~s/\A\([^()]*\):\s+(\w+)\Z/$1/;
                 $Attr = "linkage_name";
+
             }
             elsif(index($Attr, "location")!=-1)
             {
-                if($Val=~/\)\s*\Z/)
-                { # value on the next line
-                    my $NL = "";
-                    
-                    if($Import) {
-                        $NL = $ImportedUnit{$Import}{$Import_Num}
-                    }
-                    else {
-                        $NL = <$FH>;
-                    }
-                    
-                    $Val .= $NL;
-                }
-                
-                if($Val=~/\A\(\w+\)\s*(-?)(\w+)\Z/)
+                # Modified to match readelf instead of eu-readelf.
+                if($Val=~/\A(-?)(\d+)\Z/)
                 { # (data1) 1c
-                    $Val = hex($2);
+                    # Modified to match readelf instead of eu-readelf.
+                    # Eg: data_member_location : 8
+                    $Val = $2;
                     if($1) {
                         $Val = -$Val;
                     }
                 }
                 else
                 {
-                    if($Val=~/ (-?\d+)\Z/) {
+                    if ($Val=~/\(DW_OP_(\w+:?\s+-?[0-9]*)+[\(\)]/) {
+                        $Val = $1;
+                    }
+                    if($Val=~/\A(-?\d+)\Z/) {
                         $Val = $1;
                     }
                     else
@@ -1465,31 +1505,42 @@ sub read_DWARF_Dump($$)
                         if($Attr eq "location"
                         and $Kind eq "formal_parameter")
                         {
-                            if($Val=~/location list\s+\[\s*(\w+)\]\Z/)
+                            # Modified to match readelf instead of eu-readelf.
+                            if($Val=~/0x(\w+)\s+\(location list\)\Z/)
                             {
                                 $Attr = "location_list";
                                 $Val = $1;
                             }
-                            elsif($Val=~/ reg(\d+)\Z/)
+                            # Modified to match readelf instead of eu-readelf.
+                            elsif($Val=~/\(reg(\d+)\s+\(.*\)\)\Z/)
                             {
                                 $Attr = "register";
                                 $Val = $1;
                             }
                         }
+                        # Modified to match readelf instead of eu-readelf.
+                        elsif($Attr eq "vtable_elem_location") {
+                            if($Val=~/const.:\s+(-)?(\d+)/)
+                            {
+                                $Val = $2;
+                                if ($1) {
+                                   $Val = -$Val;
+                                }
+                            }
+                        }
+
                     }
                 }
             }
             elsif($Attr eq "accessibility")
             {
-                $Val=~s/\A\(.+?\)\s*//;
-                $Val=~s/\s*\(.+?\)\Z//;
-                
+                # Modified to match readelf instead of eu-readelf.
+                $Val=~s/\A(\d+)\s+\((\w+)\)\Z/$2/;
                 # NOTE: members: private by default
             }
             else
             {
                 $Val=~s/\A\(\w+\)\s*//;
-                
                 if(substr($Val, 0, 1) eq "{"
                 and $Val=~/{(.+)}/)
                 { # {ID}
@@ -1517,7 +1568,7 @@ sub read_DWARF_Dump($$)
             }
             
             $DWARF_Info{$ID}{$Attr} = "$Val";
-            
+
             if($Kind eq "compile_unit")
             {
                 if($Attr eq "stmt_list") {
@@ -1530,7 +1581,8 @@ sub read_DWARF_Dump($$)
                     {
                         if(index($Val, "Assembler")==-1)
                         {
-                            $Val=~s/\s*\(.+?\)\Z//;
+                            # Modified to match readelf instead of eu-readelf.
+                            $Val=~s/\s*\((.+?\))\Z/$1/;
                             
                             if($Val=~/C\d/i) {
                                 $LIB_LANG = "C";
@@ -1611,12 +1663,14 @@ sub read_DWARF_Dump($$)
                 }
             }
         }
-        elsif($Line=~/\A \[\s*(\w+)\](\s*)(\w+)/)
+        # Modified to match readelf instead of eu-readelf.
+        elsif($Line=~/\A <(\w+)><(\w+)>:\s+.+\(DW_TAG_(\w+)\)/)
         {
-            $ID = hex($1);
-            $NS = length($2);
+            $ID = hex($2);
+            # NS is used to identify namespace / scope. Mentioned along with ID.
+            $NS = hex($1);
             $Kind = $3;
-            
+
             if(not defined $Compressed)
             {
                 if($Kind eq "partial_unit" or $Kind eq "type_unit")
@@ -1772,9 +1826,10 @@ sub read_DWARF_Dump($$)
                 $MAX_ID = $ID;
             }
         }
+        # Modified to match readelf instead of eu-readelf.
         elsif(not defined $SYS_WORD
-        and $Line=~/Address\s*size:\s*(\d+)/i)
-        {
+        and $Line=~/Pointer\s*Size:\s*(\d+)/i)
+        {		
             $SYS_WORD = $1;
         }
     }
@@ -1796,7 +1851,6 @@ sub read_Vtables($)
     $Path = abs_path($Path);
     
     my $Dir = getDirname($Path);
-    
     if(index($LIB_LANG, "C++")!=-1
     or $OBJ_LANG eq "C++")
     {
@@ -1826,14 +1880,15 @@ sub read_Vtables($)
             mkpath($ExtraInfo);
             $ExtraPath = $ExtraInfo."/v-tables";
         }
-        
-        system("LD_LIBRARY_PATH=\"$Dir\" $VTABLE_DUMPER -mangled -demangled \"$Path\" 2>\"$TMP_DIR/error\" >\"$ExtraPath\"");
+        # Modified to match the vtable dumper using LLVM's ELF api.
+        system("LD_LIBRARY_PATH=\"$Dir\" $VTABLE_DUMPER \"$Path\" 2>\"$TMP_DIR/error\" >\"$ExtraPath\"");
         
         my $Content = readFile($ExtraPath);
         foreach my $ClassInfo (split(/\n\n\n/, $Content))
         {
-            if($ClassInfo=~/\AVtable\s+for\s+(.+)\n((.|\n)+)\Z/i)
-            {
+            # Modified to match the vtable dumper using LLVM's ELF api.
+            if($ClassInfo=~/\Avtable\s+for\s+(.+)\n((.|\n)+)\Z/i)
+            {				
                 my ($CName, $VTable) = ($1, $2);
                 my @Entries = split(/\n/, $VTable);
                 
@@ -2051,14 +2106,17 @@ sub read_ABI()
         
         my $Kind = $DWARF_Info{$ID}{"Kind"};
         my $NS = $DWARF_Info{$ID}{"NS"};
-        my $Scope = $CurID{$NS-2};
+        # Modified to match readelf instead of eu-readelf. In readelf, the child's
+        # scope level will be the parent's scope level + 1.
+        my $Scope = $CurID{$NS-1};
         
         if($Kind eq "typedef")
         {
             if($DWARF_Info{$Scope}{"Kind"} eq "subprogram")
             {
                 $NS = $DWARF_Info{$Scope}{"NS"};
-                $Scope = $CurID{$NS-2};
+                # Modified to match readelf instead of eu-readelf.
+                $Scope = $CurID{$NS-1};
             }
         }
         
@@ -2179,8 +2237,9 @@ sub read_ABI()
             # free memory
             delete($DWARF_Info{$ID});
         }
-        elsif($Kind eq "template_type_parameter"
-        or $Kind eq "template_value_parameter")
+        # Modified to match readelf instead of eu-readelf.
+        elsif($Kind eq "template_type_param"
+        or $Kind eq "template_value_param")
         {
             my %Info = ("type"=>$DWARF_Info{$ID}{"type"}, "key"=>$DWARF_Info{$ID}{"name"});
             
@@ -3760,7 +3819,8 @@ sub symByAddr($)
     my $Loc = $_[0];
     
     my ($Addr, $Sect) = ("", "");
-    if($Loc=~/\+(.+)/)
+    #Modified to match readelf instead of eu-readelf.
+    if($Loc=~/0x(.+)/)
     {
         $Addr = $1;
         if(not $Addr=~s/\A0x//)
@@ -5171,7 +5231,7 @@ sub getDebugFile($$)
 {
     my ($Obj, $Header) = @_;
     
-    my $Str = `$EU_READELF_L --strings=.$Header \"$Obj\" 2>\"$TMP_DIR/error\"`;
+    my $Str = `$READELF_L --strings=.$Header \"$Obj\" 2>\"$TMP_DIR/error\"`;
     if($Str=~/(\s|\[)0\]\s*(.+)/) {
         return $2;
     }
@@ -5343,7 +5403,6 @@ sub detectPublicSymbols($)
             chdir($TmpDir);
             system($Cmd);
             chdir($ORIG_DIR);
-            
             my $TuDump = $TmpDir."/tmp-inc.h.001t.tu";
             
             if(not -e $TuDump)
@@ -5530,6 +5589,10 @@ sub getDebugAltLink($)
 
 sub scenario()
 {
+    $READELF_L = $LOCALE." ".abs_path($READELF);
+    $GPP = abs_path($GPP);
+    $OBJDUMP = abs_path($OBJDUMP);
+
     if($Help)
     {
         HELP_MESSAGE();
