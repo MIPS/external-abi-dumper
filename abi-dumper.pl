@@ -1857,8 +1857,8 @@ sub read_Vtables($)
         printMsg("INFO", "Reading v-tables");
         
         if(check_Cmd($VTABLE_DUMPER))
-        {
-            if(my $Version = `$VTABLE_DUMPER -dumpversion`)
+        {		# Modified to match vndk-vtable-dumper
+            if(my $Version = `$VTABLE_DUMPER -version`)
             {
                 if(cmpVersions($Version, $VTABLE_DUMPER_VERSION)<0)
                 {
